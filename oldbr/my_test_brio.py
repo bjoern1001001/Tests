@@ -9,9 +9,11 @@ from numpy.testing import assert_equal
 
 import numpy as np
 import quantities as pq
-
+import math
 from neo.io.blackrockio import BlackrockIO
 from neo.io.blackrockio_v4 import BlackrockIO as old_brio
+import matplotlib.pyplot as plt
+from neo.rawio import BlackrockRawIO
 
 from neo.test.iotest.common_io_test import BaseTestIO
 from neo.test.iotest.tools import get_test_file_full_path
@@ -56,7 +58,16 @@ except ImportError as err:
 #          'FileSpec2.3001.ccf',
 #          'FileSpec2.3001.mat']
 
-dirname = '/home/arbeit/Downloads/files_for_testing_neo/blackrock/FileSpec2.3001'
+dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataNikos2/i140703-001'
+dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataLilou/l101210-001'
+dirname = '/home/arbeit/Downloads/files_for_testing_neo/DataNikos/n130715-001'
+dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataEnya/e170131-002'   # File missing event data
+dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataSana/s131214-002'
+dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataTanya/t130910-001'
+dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataTanya2/a110914-001'
+dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataSana_second/s140203-003'
+dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataSana_third/s131209-001'
+dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/blackrock/FileSpec2.3001'
 oldbrio_reader = None
 newbrio_reader = None
 
@@ -66,24 +77,27 @@ newbrio_reader = None
 def old_brio_load():
     # ioclass = old_brio
     # files_to_test = ['FileSpec2.3001']
-    oldbrio_reader = old_brio(dirname)
+    oldbrio_reader = old_brio(dirname, verbose=True)
     old_block = oldbrio_reader.read_block(
         # n_starts=[None], n_stops=None,
-        channels={1, 2, 3, 4, 5, 6, 7, 8, 129, 130},
-        nsx_to_load=5,
+        channels='all',  # {1, 2, 3, 4, 5, 6, 7, 8, 129, 130},
+        nsx_to_load=2,
         units='all',
         load_events=True,
         load_waveforms=True,
-        scaling='voltage')
+        scaling='voltage', n_starts=-50*pq.s, n_stops=100000*pq.s)
+        # scaling='voltage', n_starts=0.02*pq.s, n_stops=0.04*pq.s)
     # output(old_block)
     print 'Loading old IO done'
     return old_block
 
 
 def new_brio_load():
-    newbrio_reader = BlackrockIO(dirname)
+    newbrio_reader = BlackrockIO(dirname, nsx_to_load=2)
     # new_block = newbrio_reader.read_block()
-    new_block = newbrio_reader.read_block(lazy=True)#load_waveforms=True)
+    # print(newbrio_reader)
+    # newbrio_reader.parse_header()
+    new_block = newbrio_reader.read_block(load_waveforms=True)#, time_slices=[(0.001366667*pq.s, 2.0*pq.s)])  # signal_group_mode="group-by-same-units")#load_waveforms=True)
     # output(new_block)
     print 'Loading new IO done'
     return new_block
@@ -100,7 +114,8 @@ def output(block):
             # print(anasig.channel_index.channel_id) => SHOULD WORK; BUT DOESN'T!!!!!!!!!!!
         for st in seg.spiketrains:
             if st is not None:
-                print(' SpikeTrain', st.name, st.shape, st.waveforms.shape, st.rescale(pq.s)[:5])
+                print(' SpikeTrain', st.name, st.shape, st.waveforms.shape, st.times[:].rescale(pq.s)[:5])
+                      #st.waveforms[:].rescale(pq.s)[:5])
         for ev in seg.events:
             print(' Event', ev.name, ev.times.shape)
     print ('*' * 10)
@@ -146,7 +161,7 @@ def compare_annotations(anno1, anno2, objecttype):
                       'annotation list.'.format(
             anno1.keys(), anno2.keys()))
         print('In:', objecttype)
-        time.sleep(5)
+        # time.sleep()
         return
     assert anno1.keys() == anno2.keys()
     for key in anno1.keys():
@@ -204,6 +219,7 @@ def print_attributes_of_object(object):
 def print_attributes_of_all_objects(block, objtype):
     objects = block.list_children_by_class(objtype)
     index = 0
+    print('Type: ', objtype)
     for object in objects:
         print('                                       *****Number: ', index)
         # print_attributes_of_object(object)
@@ -317,55 +333,134 @@ def block_segment_relation(block):
 def compare_array_content(rescale_factor, array1, array2):
     array1 = (array1 / rescale_factor).magnitude
     array2 = array2.magnitude
-    print(array1, array2)
-    if np.allclose(array1, array2, atol=0.000000000000000001):
+    print(rescale_factor, '****************************')
+    if np.allclose(array1, array2, atol=0.0001, rtol=0.0001):
         print('Good')
     else:
         print('Failed')
+    #  if (array1 == array2).all:
+    #      print('Good')
+    #  else:
+    #      print('Failed')
 
 
 def compare_object_content(old_block, new_block, objtype):
     objolds = old_block.list_children_by_class(objtype)
     objnews = new_block.list_children_by_class(objtype)
+    # print(objolds, objnews)
     for objold, objnew in zip(objolds, objnews):
-        oldarray = objold.times  # specific for SpikeTrain and Event
+        oldarray = objold[:]  # specific for SpikeTrain and Event
         newarray = objnew[:]  # specific for AnaSig
-        compare_array_content(oldarray[0] / newarray[0], oldarray, newarray)
+        # print(oldarray)
+        # print(newarray)
+        rescale_factor = oldarray.flat[0] / newarray.flat[0]
+        index = 1
+        while math.isnan(rescale_factor):
+            rescale_factor = oldarray.flat[index] / newarray.flat[index]
+            index += 1
+        compare_array_content(rescale_factor, oldarray, newarray)
+
+
+def plot(old_block, new_block):
+    ar = np.zeros_like(np.ndarray(30000))
+    st = old_block.list_children_by_class(SpikeTrain)[0]
+    anasig = old_block.list_children_by_class(AnalogSignal)[0]
+    array = anasig[:].magnitude
+    print(array)
+    for t in st[:].magnitude:
+        print (t)
+        ar[int(t-5)] = 10
+    plt.plot(ar, 'x')
+    plt.plot(array)
+    # plt.figure(2)
+    newar = np.zeros_like(np.ndarray(30000))
+    newst = new_block.list_children_by_class(SpikeTrain)[0]
+    newanasig = new_block.list_children_by_class(AnalogSignal)[0]
+    newarray = anasig[:].magnitude
+    print(newarray)
+    for nt in newst[:].magnitude * 30000:
+        print (nt)
+        newar[int(nt-5)] = 10
+    plt.plot(newar, 'x')
+    plt.plot(newarray)
+    plt.show()
+
+
+def plotnew(old_block):
+    ar = np.zeros_like(np.ndarray(31000))
+    st = old_block.list_children_by_class(SpikeTrain)[0]
+    anasig = old_block.list_children_by_class(AnalogSignal)[0]
+    array = anasig[:].magnitude
+    print(array)
+    for t in st[:].magnitude * 30000:
+        print (t)
+        ar[int(t-5)] = 10
+    plt.plot(ar, 'x')
+    plt.plot(array)
+    plt.show()
 
 
 def run_test():
-    old_block = old_brio_load()
-    # output(old_block)
+    startold = time.time()
+    # old_block = old_brio_load()
+    finishold = time.time()
+    print('This took ', finishold-startold, ' seconds')
+    #output(old_block)
+    #raise ValueError
+    startnew = time.time()
     new_block = new_brio_load()
-    # output(new_block)
-    # compare_neo_content(old_block, new_block)
-    # print('OLD IO')
-    # print_annotations_id(old_block, 'SpikeTrain')
-    # print('NEW IO')
-    # print_annotations_id(new_block, 'SpikeTrain')
-    # chan_ind = child_objects(old_block, ChannelIndex)
-    # print('NEW Event Annotations')
-    # print_annotations_all(new_block, Event)
-    # print('NEW Epoch Attributes')        # NEED TO DO THIS FOR AAAAALLLLLL OBJECT TYPES!!!!!!!!!!!!!! Unit SpikeTrain Event Epoch
-    print_attributes_of_all_objects(old_block, AnalogSignal)
-    print_attributes_of_all_objects(new_block, SpikeTrain)
-    # chanind_anasig_relation(new_block)
-    # chanind_unit_relation(new_block)
-    unit_st_relation(new_block)
-    st_unit_relation(new_block)
-    # segment_anasig_relation(old_block)
-    # segment_st_relation(new_block)
-    #segment_event_relation(new_block)
-    #block_segment_relation(new_block)
-    # compare_object_content(old_block, new_block, AnalogSignal)
-    #print_annotations_id(new_block, Unit)
-    #print_annotations_id()
-    #print_attributes_of_object(new_block)
-    #print_attributes_of_object(old_block)
-    #print_annotations_of_object(new_block)
-    #print_annotations_of_object(old_block)
-    #anasig = new_block.list_children_by_class(AnalogSignal)[2]
-    #print anasig.shape
+    finishnew = time.time()
+    print('This took ', finishnew - startnew, ' seconds')
+    output(new_block)
+    #plot(old_block, new_block)
+    #compare_neo_content(old_block, new_block)
+    objtypes = [Segment, ChannelIndex, Unit, AnalogSignal,
+                            SpikeTrain, Event, Epoch]
+    #plot(old_block, new_block)
+    # for objtype in objtypes:
+    #     print('*'*100)
+    #     print('OLD IO')
+    #     print_annotations_all(old_block, objtype)
+    #     print('*' * 100)
+    #     print('NEW IO')
+    #     print_annotations_all(new_block, objtype)
+    # print("OLD IO")
+    # print_annotations_of_object(old_block)
+    # print("NEW IO")
+    # print_annotations_of_object(new_block)
+        # print("OLD BLOCK ANNOTATIONS")
+        # print_annotations_of_object(old_block)
+        # print("NEW BLOCK ANNOTATIONS")
+        ## print_annotations_of_object(new_block)
+        # chan_ind = child_objects(old_block, ChannelIndex)
+        # print('NEW Event Annotations')
+        # print_annotations_all(old_block, Unit)
+        # print('NEW Epoch Attributes')        # NEED TO DO THIS FOR AAAAALLLLLL OBJECT TYPES!!!!!!!!!!!!!! Unit SpikeTrain Event Epoch
+        # print_attributes_of_all_objects(new_block, SpikeTrain)
+    #print_attributes_of_object(new_block.list_children_by_class(AnalogSignal)[96])
+    #print_attributes_of_all_objects(old_block, AnalogSignal)
+    #compare_array_content(1, new_block.list_children_by_class(AnalogSignal)[96][:], old_block.list_children_by_class(AnalogSignal)[0][:])
+        # chanind_anasig_relation(new_block)
+        # chanind_unit_relation(new_block)
+        # unit_st_relation(new_block)
+        # st_unit_relation(new_block)
+        # segment_anasig_relation(new_block)
+        # segment_st_relation(new_block)
+        # segment_event_relation(new_block)
+        # segment_epoch_relation(new_block)
+        # block_chanind_relation(new_block)
+        # block_segment_relation(new_block)
+    #compare_object_content(old_block, new_block, AnalogSignal)
+        #print_annotations_id(new_block, Unit)
+        #print_annotations_id()
+        #print_attributes_of_object(new_block)
+        #print_attributes_of_object(old_block)
+        #print_annotations_of_object(new_block)
+        #print_annotations_of_object(old_block)
+        #anasig = new_block.list_children_by_class(AnalogSignal)[2]
+        #print anasig.shape
+    #testEvent = Event(times=[1, 2, 3, 4, 5], labels=['a', 'b', 'c', 'd', 'e'], units=pq.mV, name='Test')
+    #print(testEvent)
 
 
 run_test()
