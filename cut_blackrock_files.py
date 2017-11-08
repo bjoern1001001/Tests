@@ -52,7 +52,7 @@ def cut_nsx_variant_b(filenames, nsx_nb, nb_samples=None, sampling_rate=None, le
         filename = '.'.join([filenames['nsx'], 'ns%i' % nsx_nb])
 
         bytes_in_headers = np.memmap(filename, dtype='uint32', offset=10, shape=1)[0]
-        file_sampling_rate = np.memmap(filename, dtype='uint32', offset=290, shape=1)[0]
+        file_sampling_rate = 30000/np.memmap(filename, dtype='uint32', offset=286, shape=1)[0]
         channel_count = np.memmap(filename, dtype='int32', offset=310, shape=1)[0]
 
         offset_header = bytes_in_headers + 9
@@ -61,10 +61,12 @@ def cut_nsx_variant_b(filenames, nsx_nb, nb_samples=None, sampling_rate=None, le
             nb_samples = (length_bytes - offset_header)/(2*shape)
             file_sampling_rate = 1
             sampling_rate = 1
-        length = (int((nb_samples*file_sampling_rate)/sampling_rate)+1)*shape*2
+
+        nb_samples = int((nb_samples*file_sampling_rate)/sampling_rate)
+        length = (nb_samples+1)*shape*2
 
         cut_file_nsx_variant_b(filename, offset_header + length, offset_header,
-                               int((nb_samples*file_sampling_rate)/sampling_rate), channel_count)
+                               nb_samples, channel_count)
 
 
 def cut_nev(filenames, nb_samples=None, sampling_rate=None, length_bytes=None, split=False):
@@ -110,7 +112,7 @@ def cut_file(filename, total_length):
     return part_to_write
 
 
-def cut_file_nsx_variant_b(filename, total_length, offset_header, nb_samples, channel_nb):        #TODO: What if recording was paused? Then new timestamp in between => NEEDS TESTING!!!
+def cut_file_nsx_variant_b(filename, total_length, offset_header, nb_samples, channel_nb):
 
     if total_length > os.path.getsize(filename):
         raise ValueError('More samples specified than included in file')
@@ -128,7 +130,7 @@ def cut_file_nsx_variant_b(filename, total_length, offset_header, nb_samples, ch
 
     nb_samples_to_write = nb_samples + 1
     for i in range(4):
-        writer[offset_header-i-1] = np.uint8(nb_samples_to_write % 256)
+        writer[offset_header+i-4] = np.uint8(nb_samples_to_write % 256)
         nb_samples_to_write /= 256
 
     return part_to_write
@@ -181,7 +183,11 @@ def get_nev_samples(filenames, length_bytes):
 
 
 def print_help():
-    print("Usage: cut_blackrock_files.py <number of samples> [--options <arguments>]")
+    print("Usage: cut_blackrock_files.py [arguments] [--options <arguments>]")
+    print("Arguments:")
+    print("Number of samples\t\tSpecifies the number of samples to choose from each file. Overridden by '-b'.")
+    print("Sampling rate\t\tSpecifies the sampling rate that belongs to the number of samples so the same times are "
+          "used for all files even with different sampling rates. Overridden by '-b'.")
     print("Options:")
     print("-a\t\tCuts all nsX and nev files, if not specified otherwise")
     print("-f <path>\t\tSpecifies the path to the files, e.g. '-f /home/user/Data/a150101-001'")
@@ -191,6 +197,7 @@ def print_help():
           "Redundant when '-a' is specified")
     print("--nsx_path <path>\t\tSpecifies path for nsX files if it differs from '-f <path>' or '-f' is not specified")
     print("--nev_path <path>\t\tSpecifies path for nev files if it differs from '-f <path>' or '-f' is not specified")
+    print("--same\t\tIf this option is given, every outfile will have the same size")
     sys.exit()
 
 
@@ -206,10 +213,10 @@ filenames = {}
 length_bytes = None
 nb_samples = None
 sampling_rate = None
-
+split = False
 arguments = sys.argv[1:]
 try:
-    opts, args = getopt.gnu_getopt(arguments, "af:b:", ["nsx=", "nev", "nsx_path=", "nev_path="])
+    opts, args = getopt.gnu_getopt(arguments, "af:b:", ["nsx=", "nev", "nsx_path=", "nev_path=", "split"])
 except getopt.GetoptError:
     print_help()
 
@@ -225,7 +232,6 @@ if args:        # Pyhtonic way!
     except ValueError:
         print_help()
 
-nsx_is_largest = False
 
 for option, argument in opts:
     if option == "-a":
@@ -259,6 +265,8 @@ for option, argument in opts:
         filenames['nsx'] = argument
     elif option == "--nev_path'":
         filenames['nev'] = argument
+    elif option == "--same":
+        split = True
 
 if not filenames:
     print_help()
@@ -266,16 +274,20 @@ if not filenames:
 
 if nsx_nb == 'all':
     nsx_nb = []
-    for i in range(6):
+    for i in range(1, 7):
         filename = ".".join([filenames['nsx'], 'ns%i' % i])
         if os.path.exists(filename):
             nsx_nb.append(i)
+
+
+nsx_is_largest = False
 
 for i in nsx_nb:
     if load_nev and os.path.getsize(".".join([filenames['nev'], 'nev'])) < os.path.getsize(
             '.'.join([filenames['nsx'], 'ns%i' % i])):
         nsx_is_largest = True
-split = True
+
+
 if not split:
     if nsx_is_largest:
         nb_samples, sampling_rate = get_nsx_samples(filenames, max(nsx_nb), extract_nsx_file_spec(filenames, max(nsx_nb)),length_bytes)
@@ -292,8 +304,6 @@ if load_nev:
     cut_nev(filenames, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes, split=split)
 
 
-#  TODO: Alternativ Laenge in Bytes festlegen, t_start und t_stop aller Files abstimmen!
-# Oder Laenge in Sekungden, muss anpassen, dass Festlegung nur einmal gemacht werden muss
-# und aus allem die gleiche ZEIT gelesen wird!!!
+# TODO: same times from each file (???)
 
 
