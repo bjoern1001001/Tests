@@ -59,10 +59,11 @@ except ImportError as err:
 #          'FileSpec2.3001.mat']
 
 dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataNikos2/i140703-001'
-dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataLilou/l101210-001'
-dirname = '/home/arbeit/Downloads/files_for_testing_neo/DataNikos/n130715-001'
+dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataLilou/Testfiles_10000_samples/l101210-001a'
+dirname = '/home/arbeit/Downloads/files_for_testing_neo/DataLilou/l101210-001'
+dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataNikos/n130715-001'
 dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataEnya/e170131-002'   # File missing event data
-dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataSana/s131214-002'
+dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataSana/s131214-002'  # Do not load ns6!!!!
 dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataTanya/t130910-001'
 dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataTanya2/a110914-001'
 dirname1 = '/home/arbeit/Downloads/files_for_testing_neo/DataSana_second/s140203-003'
@@ -85,7 +86,7 @@ def old_brio_load():
         units='all',
         load_events=True,
         load_waveforms=True,
-        scaling='voltage', n_starts=-50*pq.s, n_stops=100000*pq.s)
+        scaling='voltage')
         # scaling='voltage', n_starts=0.02*pq.s, n_stops=0.04*pq.s)
     # output(old_block)
     print 'Loading old IO done'
@@ -97,7 +98,7 @@ def new_brio_load():
     # new_block = newbrio_reader.read_block()
     # print(newbrio_reader)
     # newbrio_reader.parse_header()
-    new_block = newbrio_reader.read_block(load_waveforms=True)#, time_slices=[(0.001366667*pq.s, 2.0*pq.s)])  # signal_group_mode="group-by-same-units")#load_waveforms=True)
+    new_block = newbrio_reader.read_block(load_waveforms=True)  #, signal_group_mode="group-by-same-units") #, time_slices=[(1.0, 40.0)])#, time_slices=[(0.001366667*pq.s, 2.0*pq.s)])  # signal_group_mode="group-by-same-units")#load_waveforms=True)
     # output(new_block)
     print 'Loading new IO done'
     return new_block
@@ -114,7 +115,7 @@ def output(block):
             # print(anasig.channel_index.channel_id) => SHOULD WORK; BUT DOESN'T!!!!!!!!!!!
         for st in seg.spiketrains:
             if st is not None:
-                print(' SpikeTrain', st.name, st.shape, st.waveforms.shape, st.times[:].rescale(pq.s)[:5])
+                print(' SpikeTrain', st.name, st.shape, st.waveforms.shape, st.times[:][:5])
                       #st.waveforms[:].rescale(pq.s)[:5])
         for ev in seg.events:
             print(' Event', ev.name, ev.times.shape)
@@ -196,6 +197,16 @@ def print_annotations_all(
         for key in obj.annotations.keys():
             print('Key: ', key)
             print('Value: ', obj.annotations[key])
+        print('*' * 20)
+
+def print_annotations_chidx(block):
+    objects = block.list_children_by_class(AnalogSignal)
+    print ('Object Type: ', AnalogSignal)
+    for obj in objects:
+        print(obj.name)
+        for key in obj.channel_index.annotations.keys():
+            print('Key: ', key)
+            print('Value: ', obj.channel_index.annotations[key])
         print('*' * 20)
 
 def print_annotations_of_object(obj):
@@ -369,18 +380,18 @@ def plot(old_block, new_block):
     print(array)
     for t in st[:].magnitude:
         print (t)
-        ar[int(t-5)] = 10
+        ar[int(t-6000)] = 10
     plt.plot(ar, 'x')
     plt.plot(array)
     # plt.figure(2)
     newar = np.zeros_like(np.ndarray(30000))
     newst = new_block.list_children_by_class(SpikeTrain)[0]
     newanasig = new_block.list_children_by_class(AnalogSignal)[0]
-    newarray = anasig[:].magnitude
+    newarray = newanasig[:].magnitude
     print(newarray)
     for nt in newst[:].magnitude * 30000:
         print (nt)
-        newar[int(nt-5)] = 10
+        newar[int(nt-6000)] = 10
     plt.plot(newar, 'x')
     plt.plot(newarray)
     plt.show()
@@ -402,10 +413,10 @@ def plotnew(old_block):
 
 def run_test():
     startold = time.time()
-    # old_block = old_brio_load()
+    old_block = old_brio_load()
     finishold = time.time()
     print('This took ', finishold-startold, ' seconds')
-    #output(old_block)
+    output(old_block)
     #raise ValueError
     startnew = time.time()
     new_block = new_brio_load()
@@ -436,9 +447,13 @@ def run_test():
         # print('NEW Event Annotations')
         # print_annotations_all(old_block, Unit)
         # print('NEW Epoch Attributes')        # NEED TO DO THIS FOR AAAAALLLLLL OBJECT TYPES!!!!!!!!!!!!!! Unit SpikeTrain Event Epoch
-        # print_attributes_of_all_objects(new_block, SpikeTrain)
+    #print_annotations_all(new_block, ChannelIndex)
+    print_attributes_of_all_objects(new_block, AnalogSignal)
+    #print_annotations_chidx(new_block)
+    #chanind_unit_relation(new_block)
     #print_attributes_of_object(new_block.list_children_by_class(AnalogSignal)[96])
-    #print_attributes_of_all_objects(old_block, AnalogSignal)
+    #for i in objtypes:
+    #    print_attributes_of_all_objects(new_block, i)
     #compare_array_content(1, new_block.list_children_by_class(AnalogSignal)[96][:], old_block.list_children_by_class(AnalogSignal)[0][:])
         # chanind_anasig_relation(new_block)
         # chanind_unit_relation(new_block)
@@ -453,14 +468,35 @@ def run_test():
     #compare_object_content(old_block, new_block, AnalogSignal)
         #print_annotations_id(new_block, Unit)
         #print_annotations_id()
-        #print_attributes_of_object(new_block)
+    #print_attributes_of_object(new_block)
         #print_attributes_of_object(old_block)
-        #print_annotations_of_object(new_block)
+    #print_annotations_of_object(new_block)
         #print_annotations_of_object(old_block)
         #anasig = new_block.list_children_by_class(AnalogSignal)[2]
         #print anasig.shape
     #testEvent = Event(times=[1, 2, 3, 4, 5], labels=['a', 'b', 'c', 'd', 'e'], units=pq.mV, name='Test')
     #print(testEvent)
+    # liste = [0.15259254738]
+    # divarr = np.ndarray(2, 'float64')
+    # divarr[0] = liste[0]
+    # divarr[0] = liste[0]
+    # divarr[1] = liste[0]
+    # divarr[1] = liste[0]
+    # arr = np.ndarray((2, 2), 'float32')
+    # arr[0][0] = 10439.0
+    # arr[0][1] = 10439.0
+    # arr[1][0] = 10439.0
+    # arr[1][1] = 10439.0
+    # #print '{0:.15f}'.format\
+    # print(arr*divarr)
+    # #print '{0:.8f}'.format(divarr[0])
+    # print 10439.0*0.152593
+    # fl1 = np.float32(0.15259254738)
+    # fl2 = 0.15259254738
+    # int1 = np.float64(10439)
+    # int2 = 10439.0
+    # print(int1 * fl1)
+    # print(fl1 * int1)
 
 
 run_test()
