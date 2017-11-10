@@ -224,16 +224,16 @@ if (nb_samples is None or sampling_rate is None) and length_bytes is None:
     parser.error("You need to specify the length of the output, either input the number of samples with the "
                  "corresponding sampling rate or use -b <length in Megabytes>")
 
-if args.all:
-    args.nev = True
+if args.nsx and args.nsx[0] == 'all':
     nsx_nb = 'all'
-
-if args.nsx[0] != 'all':
+else:
     nsx_nb = []
     for nb in args.nsx:
         nsx_nb.append(int(nb))
-else:
-    nsx_nb = args.nsx[0]
+
+if args.all:
+    args.nev = True
+    nsx_nb = 'all'
 
 if nsx_nb == 'all':
     nsx_nb = []
@@ -241,7 +241,6 @@ if nsx_nb == 'all':
         filename = ".".join([filenames['nsx'], 'ns%i' % i])
         if os.path.exists(filename):
             nsx_nb.append(i)
-
 
 nsx_is_largest = False
 
