@@ -21,7 +21,6 @@ import numpy as np
 
 
 def cut_nsx_variant_a(filenames, nsx_nb, nb_samples=None, sampling_rate=None, length_bytes=None, split=False):
-
     filename = '.'.join([filenames['nsx'], 'ns%i' % nsx_nb])
 
     dt0 = [
@@ -34,42 +33,40 @@ def cut_nsx_variant_a(filenames, nsx_nb, nb_samples=None, sampling_rate=None, le
 
     offset_dt0 = np.dtype(dt0).itemsize
     shape = nsx_basic_header['channel_count']
-    file_sampling_rate = int(30000/nsx_basic_header['period'])
+    file_sampling_rate = int(30000 / nsx_basic_header['period'])
 
     offset_header = offset_dt0 + np.dtype('uint32').itemsize * shape
     if split and length_bytes is not None:
         nb_samples = (length_bytes - offset_header) / (2 * shape)
         file_sampling_rate = 1
         sampling_rate = 1
-    length = (int((nb_samples*file_sampling_rate)/sampling_rate)+1)*shape*2
+    length = (int((nb_samples * file_sampling_rate) / sampling_rate) + 1) * shape * 2
 
     cut_file(filename, offset_header + length)
 
 
 def cut_nsx_variant_b(filenames, nsx_nb, nb_samples=None, sampling_rate=None, length_bytes=None, split=False):
+    filename = '.'.join([filenames['nsx'], 'ns%i' % nsx_nb])
 
-        filename = '.'.join([filenames['nsx'], 'ns%i' % nsx_nb])
+    bytes_in_headers = np.memmap(filename, dtype='uint32', offset=10, shape=1)[0]
+    file_sampling_rate = 30000 / np.memmap(filename, dtype='uint32', offset=286, shape=1)[0]
+    channel_count = np.memmap(filename, dtype='int32', offset=310, shape=1)[0]
 
-        bytes_in_headers = np.memmap(filename, dtype='uint32', offset=10, shape=1)[0]
-        file_sampling_rate = 30000/np.memmap(filename, dtype='uint32', offset=286, shape=1)[0]
-        channel_count = np.memmap(filename, dtype='int32', offset=310, shape=1)[0]
+    offset_header = bytes_in_headers + 9
+    shape = channel_count
+    if split and length_bytes is not None:
+        nb_samples = (length_bytes - offset_header) / (2 * shape)
+        file_sampling_rate = 1
+        sampling_rate = 1
 
-        offset_header = bytes_in_headers + 9
-        shape = channel_count
-        if split and length_bytes is not None:
-            nb_samples = (length_bytes - offset_header)/(2*shape)
-            file_sampling_rate = 1
-            sampling_rate = 1
+    nb_samples = int((nb_samples * file_sampling_rate) / sampling_rate)
+    length = (nb_samples + 1) * shape * 2
 
-        nb_samples = int((nb_samples*file_sampling_rate)/sampling_rate)
-        length = (nb_samples+1)*shape*2
-
-        cut_file_nsx_variant_b(filename, offset_header + length, offset_header,
-                               nb_samples, channel_count)
+    cut_file_nsx_variant_b(filename, offset_header + length, offset_header,
+                           nb_samples, channel_count)
 
 
 def cut_nev(filenames, nb_samples=None, sampling_rate=None, length_bytes=None, split=False):
-
     filename = '.'.join([filenames['nev'], 'nev'])
 
     header = np.memmap(filename, dtype='uint32', shape=3, offset=12)
@@ -79,7 +76,7 @@ def cut_nev(filenames, nb_samples=None, sampling_rate=None, length_bytes=None, s
     file_sampling_rate = header[2]
 
     if length_bytes is not None and split:
-        nb_samples = int((length_bytes-offset_header)/data_size)
+        nb_samples = int((length_bytes - offset_header) / data_size)
         i = nb_samples
     else:
         dt0 = [
@@ -92,7 +89,7 @@ def cut_nev(filenames, nb_samples=None, sampling_rate=None, length_bytes=None, s
         i = 0
         try:
             while raw_data[i]['timestamp'] < int((nb_samples * file_sampling_rate) / sampling_rate):
-                i += 1                               # Because size of all data packets (including Packet ID 0) is the same
+                i += 1  # Because size of all data packets (including Packet ID 0) is the same
         except IndexError:
             raise ValueError("More samples specified than included in file")
 
@@ -100,11 +97,10 @@ def cut_nev(filenames, nb_samples=None, sampling_rate=None, length_bytes=None, s
 
 
 def cut_file(filename, total_length):
-
     if total_length > os.path.getsize(filename):
         raise ValueError('More samples specified than included in file')
 
-    part_to_write = np.memmap(filename, shape=total_length, dtype='uint8')     # uint8 so size is always one byte
+    part_to_write = np.memmap(filename, shape=total_length, dtype='uint8')  # uint8 so size is always one byte
 
     part_to_write.tofile("".join([filename, "_cut"]))
 
@@ -112,7 +108,6 @@ def cut_file(filename, total_length):
 
 
 def cut_file_nsx_variant_b(filename, total_length, offset_header, nb_samples, channel_nb):
-
     if total_length > os.path.getsize(filename):
         raise ValueError('More samples specified than included in file')
 
@@ -122,21 +117,20 @@ def cut_file_nsx_variant_b(filename, total_length, offset_header, nb_samples, ch
         nb_samples -= file_nb_samples
         offset_header += 2 * channel_nb * file_nb_samples + 9  # 9 bytes is length of data packet header
 
-    part_to_write = np.memmap(filename, shape=total_length, dtype='uint8')      # uint8 so size is always one byte
+    part_to_write = np.memmap(filename, shape=total_length, dtype='uint8')  # uint8 so size is always one byte
 
     writer = np.memmap("".join([filename, "_cut"]), shape=total_length, dtype='uint8', mode='w+')
     writer[:] = part_to_write[:]
 
     nb_samples_to_write = nb_samples + 1
     for i in range(4):
-        writer[offset_header+i-4] = np.uint8(nb_samples_to_write % 256)
+        writer[offset_header + i - 4] = np.uint8(nb_samples_to_write % 256)
         nb_samples_to_write /= 256
 
     return part_to_write
 
 
 def extract_nsx_file_spec(filenames, nsx_nb):
-
     filename = '.'.join([filenames['nsx'], 'ns%i' % nsx_nb])
 
     dt0 = [
@@ -157,28 +151,27 @@ def extract_nsx_file_spec(filenames, nsx_nb):
 
 
 def get_nsx_samples(filenames, nsx_nb, spec, length_bytes):
-
     filename = '.'.join([filenames['nsx'], 'ns%i' % nsx_nb])
 
     if spec == '2.1':
         channel_count = np.memmap(filename, dtype='int32', offset=28, shape=1)[0]
-        bytes_in_headers = 11 + channel_count*4
-        sampling_rate = int(30000/np.memmap(filename, dtype='int32', offset=24, shape=1)[0])
+        bytes_in_headers = 11 + channel_count * 4
+        sampling_rate = int(30000 / np.memmap(filename, dtype='int32', offset=24, shape=1)[0])
     elif spec in ['2.2', '2.3']:
         bytes_in_headers = np.memmap(filename, dtype='uint32', offset=10, shape=1)[0]
         channel_count = np.memmap(filename, dtype='int32', offset=310, shape=1)[0]
         sampling_rate = np.memmap(filename, dtype='uint32', offset=290, shape=1)[0]
 
-    return int((length_bytes-bytes_in_headers)/(2*channel_count)), sampling_rate
+    return int((length_bytes - bytes_in_headers) / (2 * channel_count)), sampling_rate
 
 
 def get_nev_samples(filenames, length_bytes):
     filename = '.'.join([filenames['nev'], 'nev'])
     data_size = np.memmap(filename, dtype='uint32', shape=1, offset=16)[0]
     offset_header = np.memmap(filename, dtype='uint32', shape=1, offset=12)[0]
-    nb_samples = int((length_bytes-offset_header)/data_size)
-    time_stamp = np.memmap(filename, dtype='uint32', shape=1, offset=offset_header+nb_samples*data_size)[0]
-    return int(time_stamp/np.memmap(filename, dtype='uint32', shape=1, offset=20)[0])*1000, 1000
+    nb_samples = int((length_bytes - offset_header) / data_size)
+    time_stamp = np.memmap(filename, dtype='uint32', shape=1, offset=offset_header + nb_samples * data_size)[0]
+    return int(time_stamp / np.memmap(filename, dtype='uint32', shape=1, offset=20)[0]) * 1000, 1000
 
 
 parser = argparse.ArgumentParser()
@@ -196,33 +189,16 @@ parser.add_argument("--same_size", action='store_true')
 
 args = parser.parse_args()
 
-nb_samples = args.nb_samples
-sampling_rate = args.sampling_rate
-if args.bytes is not None:
-    length_bytes = args.bytes * 1024 * 1024
-else:
-    length_bytes = None
-filenames = {}
-if args.filenames is not None:
-    filenames['nsx'] = args.filenames
-    filenames['nev'] = args.filenames
-if args.nsx_path is not None:
-    filenames['nsx'] = args.nsx_path
-if args.nev_path is not None:
-    filenames['nev'] = args.nev_path
-if not filenames:
-    parser.error("No filenames specified, please use -f or --nsx_path and/or --nev_path")
-elif args.nsx and 'nsx' not in filenames:
-    parser.error("You need to specify a path for the nsX you want to cut, please use -f or --nsx_path")
-elif args.nev and 'nev' not in filenames:
-    parser.error("You need to specify a path for the nev you want to cut, please use -f or --nev_path")
-
 if not args.nev and not args.nsx and not args.all:
     parser.error("You need to specify what you want to cut")
 
-if (nb_samples is None or sampling_rate is None) and length_bytes is None:
+if (args.nb_samples is None or args.sampling_rate is None) and args.bytes is None:
     parser.error("You need to specify the length of the output, either input the number of samples with the "
                  "corresponding sampling rate or use -b <length in Megabytes>")
+
+nb_samples = args.nb_samples
+sampling_rate = args.sampling_rate
+load_nev = args.nev
 
 if args.nsx and args.nsx[0] == 'all':
     nsx_nb = 'all'
@@ -232,8 +208,34 @@ else:
         nsx_nb.append(int(nb))
 
 if args.all:
-    args.nev = True
     nsx_nb = 'all'
+    load_nev = True
+
+if args.bytes is not None:
+    length_bytes = args.bytes * 1024 * 1024
+else:
+    length_bytes = None
+
+filenames = {}
+if args.filenames is not None:
+    filenames['nsx'] = args.filenames
+    filenames['nev'] = args.filenames
+if args.nsx_path is not None:
+    filenames['nsx'] = args.nsx_path
+if args.nev_path is not None:
+    filenames['nev'] = args.nev_path
+
+if not filenames:
+    parser.error("No filenames specified, please use -f or --nsx_path and/or --nev_path")
+elif nsx_nb and 'nsx' not in filenames:
+    parser.error("You need to specify a path for the nsX you want to cut, please use -f or --nsx_path")
+elif load_nev and not ('nev' in filenames):
+    parser.error("You need to specify a path for the nev you want to cut, please use -f or --nev_path")
+
+for key in filenames:
+    if not (filenames[key].startswith('/') or filenames[key].startswith('~')):
+        raise NotImplementedError
+print(filenames)
 
 if nsx_nb == 'all':
     nsx_nb = []
@@ -245,11 +247,12 @@ if nsx_nb == 'all':
 nsx_is_largest = False
 
 for i in nsx_nb:
-    if args.nev and os.path.getsize(".".join([filenames['nev'], 'nev'])) < os.path.getsize(
+    if load_nev and os.path.getsize(".".join([filenames['nev'], 'nev'])) < os.path.getsize(
             '.'.join([filenames['nsx'], 'ns%i' % i])):
         nsx_is_largest = True
         break
-
+    elif not load_nev:
+        nsx_is_largest = True
 
 if length_bytes is not None and not args.same_size:
     if nsx_is_largest:
@@ -266,7 +269,7 @@ for i in nsx_nb:
     elif spec in ['2.2', '2.3']:
         cut_nsx_variant_b(filenames, i, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes,
                           split=args.same_size)
-if args.nev:
+if load_nev:
     cut_nev(filenames, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes,
             split=args.same_size)
 
