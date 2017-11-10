@@ -21,6 +21,9 @@ import numpy as np
 
 
 def cut_nsx_variant_a(filenames, nsx_nb, nb_samples=None, sampling_rate=None, length_bytes=None, split=False):
+
+    """Loads the values needed to cut nsX files of version 2.1 and calls the function that cuts the files"""
+
     filename = '.'.join([filenames['nsx'], 'ns%i' % nsx_nb])
 
     dt0 = [
@@ -46,6 +49,9 @@ def cut_nsx_variant_a(filenames, nsx_nb, nb_samples=None, sampling_rate=None, le
 
 
 def cut_nsx_variant_b(filenames, nsx_nb, nb_samples=None, sampling_rate=None, length_bytes=None, split=False):
+
+    """Loads the values needed to cut nsX files of version 2.2 or 2.3 and calls the function that cuts the files"""
+
     filename = '.'.join([filenames['nsx'], 'ns%i' % nsx_nb])
 
     bytes_in_headers = np.memmap(filename, dtype='uint32', offset=10, shape=1)[0]
@@ -67,6 +73,9 @@ def cut_nsx_variant_b(filenames, nsx_nb, nb_samples=None, sampling_rate=None, le
 
 
 def cut_nev(filenames, nb_samples=None, sampling_rate=None, length_bytes=None, split=False):
+
+    """Loads the values needed to cut nev files and calls the function that cuts the files"""
+
     filename = '.'.join([filenames['nev'], 'nev'])
 
     header = np.memmap(filename, dtype='uint32', shape=3, offset=12)
@@ -97,6 +106,9 @@ def cut_nev(filenames, nb_samples=None, sampling_rate=None, length_bytes=None, s
 
 
 def cut_file(filename, total_length):
+
+    """Cuts files down to specified length"""
+
     if total_length > os.path.getsize(filename):
         raise ValueError('More samples specified than included in file')
 
@@ -108,6 +120,9 @@ def cut_file(filename, total_length):
 
 
 def cut_file_nsx_variant_b(filename, total_length, offset_header, nb_samples, channel_nb):
+
+    """Cuts files of version 2.2 or 2.3, also needs to edit number of samples following the header"""
+
     if total_length > os.path.getsize(filename):
         raise ValueError('More samples specified than included in file')
 
@@ -131,6 +146,9 @@ def cut_file_nsx_variant_b(filename, total_length, offset_header, nb_samples, ch
 
 
 def extract_nsx_file_spec(filenames, nsx_nb):
+
+    """Returns the file version of the nsX files"""
+
     filename = '.'.join([filenames['nsx'], 'ns%i' % nsx_nb])
 
     dt0 = [
@@ -151,6 +169,9 @@ def extract_nsx_file_spec(filenames, nsx_nb):
 
 
 def get_nsx_samples(filenames, nsx_nb, spec, length_bytes):
+
+    """Reads the number of samples required for specified length in bytes from nsX files"""
+
     filename = '.'.join([filenames['nsx'], 'ns%i' % nsx_nb])
 
     if spec == '2.1':
@@ -166,6 +187,9 @@ def get_nsx_samples(filenames, nsx_nb, spec, length_bytes):
 
 
 def get_nev_samples(filenames, length_bytes):
+
+    """Reads the number of samples required for specified length in bytes from nev files"""
+
     filename = '.'.join([filenames['nev'], 'nev'])
     data_size = np.memmap(filename, dtype='uint32', shape=1, offset=16)[0]
     offset_header = np.memmap(filename, dtype='uint32', shape=1, offset=12)[0]
@@ -174,6 +198,7 @@ def get_nev_samples(filenames, length_bytes):
     return int(time_stamp / np.memmap(filename, dtype='uint32', shape=1, offset=20)[0]) * 1000, 1000
 
 
+# Creating argparse parser with desired arguments
 parser = argparse.ArgumentParser()
 
 parser.add_argument("nb_samples", type=int, nargs='?', default=None)
@@ -189,6 +214,7 @@ parser.add_argument("--same_size", action='store_true')
 
 args = parser.parse_args()
 
+# Check if arguments are correctly specified where argparse can't check itself
 if not args.nev and not args.nsx and not args.all:
     parser.error("You need to specify what you want to cut")
 
@@ -196,6 +222,7 @@ if (args.nb_samples is None or args.sampling_rate is None) and args.bytes is Non
     parser.error("You need to specify the length of the output, either input the number of samples with the "
                  "corresponding sampling rate or use -b <length in Megabytes>")
 
+# Read the values into local variables
 nb_samples = args.nb_samples
 sampling_rate = args.sampling_rate
 load_nev = args.nev
@@ -225,6 +252,7 @@ if args.nsx_path is not None:
 if args.nev_path is not None:
     filenames['nev'] = os.path.abspath(args.nev_path)
 
+# Check if filenames are specified, needs to be done down here because local dictionary filenames must be set first
 if not filenames:
     parser.error("No filenames specified, please use -f or --nsx_path and/or --nev_path")
 elif nsx_nb and 'nsx' not in filenames:
@@ -232,6 +260,7 @@ elif nsx_nb and 'nsx' not in filenames:
 elif load_nev and not ('nev' in filenames):
     parser.error("You need to specify a path for the nev you want to cut, please use -f or --nev_path")
 
+# Finding available nsX
 if nsx_nb == 'all':
     nsx_nb = []
     for i in range(1, 7):
@@ -239,6 +268,7 @@ if nsx_nb == 'all':
         if os.path.exists(filename):
             nsx_nb.append(i)
 
+# Check if nsX or nev has higher file size
 nsx_is_largest = False
 
 for i in nsx_nb:
@@ -249,6 +279,7 @@ for i in nsx_nb:
     elif not load_nev:
         nsx_is_largest = True
 
+# Choose wanted number of samples from largest file so the single files don't become larger than length_bytes
 if length_bytes is not None and not args.same_size:
     if nsx_is_largest:
         nb_samples, sampling_rate = get_nsx_samples(filenames, max(nsx_nb),
@@ -256,6 +287,7 @@ if length_bytes is not None and not args.same_size:
     else:
         nb_samples, sampling_rate = get_nev_samples(filenames, length_bytes)
 
+# Load nsX with different routine depending on file version
 for i in nsx_nb:
     spec = extract_nsx_file_spec(filenames, i)
     if spec == '2.1':
@@ -264,6 +296,7 @@ for i in nsx_nb:
     elif spec in ['2.2', '2.3']:
         cut_nsx_variant_b(filenames, i, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes,
                           split=args.same_size)
+# Load nev if wanted
 if load_nev:
     cut_nev(filenames, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes,
             split=args.same_size)
