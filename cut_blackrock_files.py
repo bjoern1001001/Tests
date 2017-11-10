@@ -14,9 +14,8 @@ This script can handle the following Blackrock file specifications:
   * 2.3
 """
 
-import getopt
+import argparse
 import os
-import sys
 
 import numpy as np
 
@@ -182,95 +181,59 @@ def get_nev_samples(filenames, length_bytes):
     return int(time_stamp/np.memmap(filename, dtype='uint32', shape=1, offset=20)[0])*1000, 1000
 
 
-def print_help():
-    print("Usage: cut_blackrock_files.py [arguments] [--options <arguments>]")
-    print("Arguments:")
-    print("Number of samples\t\tSpecifies the number of samples to choose from each file. Overridden by '-b'.")
-    print("Sampling rate\t\tSpecifies the sampling rate that belongs to the number of samples so the same times are "
-          "used for all files even with different sampling rates. Overridden by '-b'.")
-    print("Options:")
-    print("-a\t\tCuts all nsX and nev files, if not specified otherwise")
-    print("-f <path>\t\tSpecifies the path to the files, e.g. '-f /home/user/Data/a150101-001'")
-    print("--nsx <numbers>\t\tSpecifies which nsX files to load, can be integer, comma seperated list of integers "
-          "or 'all', e.g. '--nsx 2,5' or '--nsx all'. Overrides '-a'")
-    print("--nev\t\tSpecifies whether to load nev files, default is False. '--nev' means nev will be loaded. "
-          "Redundant when '-a' is specified")
-    print("--nsx_path <path>\t\tSpecifies path for nsX files if it differs from '-f <path>' or '-f' is not specified")
-    print("--nev_path <path>\t\tSpecifies path for nev files if it differs from '-f <path>' or '-f' is not specified")
-    print("--same\t\tIf this option is given, every outfile will have the same size")
-    sys.exit()
+parser = argparse.ArgumentParser()
 
+parser.add_argument("nb_samples", type=int, nargs='?', default=None)
+parser.add_argument("sampling_rate", type=int, nargs='?', default=None)
+parser.add_argument("-b", "--bytes", type=int, default=None)
+parser.add_argument("-a", "--all", action='store_true')
+parser.add_argument("-f", "--filenames", type=str, default=None)
+parser.add_argument("--nsx", type=str, nargs='*', default=[])
+parser.add_argument("--nev", action='store_true')
+parser.add_argument("--nsx_path", type=str, default=None)
+parser.add_argument("--nev_path", type=str, default=None)
+parser.add_argument("--same_size", action='store_true')
 
-try:
-    nb_samples = int(sys.argv[1])
-    sampling_rate = int(sys.argv[2])
-except (IndexError, ValueError):
-    pass
+args = parser.parse_args()
 
-load_nev = False
-nsx_nb = []
+nb_samples = args.nb_samples
+sampling_rate = args.sampling_rate
+if args.bytes is not None:
+    length_bytes = args.bytes * 1024 * 1024
+else:
+    length_bytes = None
 filenames = {}
-length_bytes = None
-nb_samples = None
-sampling_rate = None
-split = False
-arguments = sys.argv[1:]
-try:
-    opts, args = getopt.gnu_getopt(arguments, "af:b:", ["nsx=", "nev", "nsx_path=", "nev_path=", "split"])
-except getopt.GetoptError:
-    print_help()
-
-if args:        # Pyhtonic way!
-    try:
-        nb_samples = int(args[0])
-        sampling_rate = int(args[1])
-    except IndexError:
-        if not any("-b" in opt for opt in opts):
-            print_help()
-        else:
-            pass
-    except ValueError:
-        print_help()
-
-
-for option, argument in opts:
-    if option == "-a":
-        if not nsx_nb:  # Pythonic way of doing this, empty lists have implicit boolean False
-            nsx_nb = 'all'
-        load_nev = True
-    elif option == "-f" and filenames == {}:
-        filenames['nsx'] = argument
-        filenames['nev'] = argument
-    elif option == "-b":
-        try:
-            length_bytes = int(argument)*1024*1024
-        except ValueError:
-            print_help()
-    elif option == "--nsx":
-        if argument == 'all':
-            nsx_nb = argument
-        else:
-            try:
-                nsx_nb = [int(argument)]
-            except ValueError:
-                nsx_nb = argument.split(",")
-                for i, j in enumerate(nsx_nb):
-                    try:
-                        nsx_nb[i] = int(j)
-                    except ValueError:
-                        print_help()
-    elif option == "--nev":
-        load_nev = True
-    elif option == "--nsx_path":
-        filenames['nsx'] = argument
-    elif option == "--nev_path'":
-        filenames['nev'] = argument
-    elif option == "--same":
-        split = True
-
+if args.filenames is not None:
+    filenames['nsx'] = args.filenames
+    filenames['nev'] = args.filenames
+if args.nsx_path is not None:
+    filenames['nsx'] = args.nsx_path
+if args.nev_path is not None:
+    filenames['nev'] = args.nev_path
 if not filenames:
-    print_help()
+    parser.error("No filenames specified, please use -f or --nsx_path and/or --nev_path")
+elif args.nsx and 'nsx' not in filenames:
+    parser.error("You need to specify a path for the nsX you want to cut, please use -f or --nsx_path")
+elif args.nev and 'nev' not in filenames:
+    parser.error("You need to specify a path for the nev you want to cut, please use -f or --nev_path")
 
+if not args.nev and not args.nsx and not args.all:
+    parser.error("You need to specify what you want to cut")
+
+if (nb_samples is None or sampling_rate is None) and length_bytes is None:
+    parser.error("You need to specify the length of the output, either input the number of samples with the "
+                 "corresponding sampling rate or use -b <length in Megabytes>")
+
+if args.all:
+    args.nev = True
+    nsx_nb = 'all'
+
+if args.nsx[0] != 'all':
+    nsx_nb = []
+    for nb in args.nsx:
+        nsx_nb.append(int(nb))
+else:
+    nsx_nb = args.nsx[0]
 
 if nsx_nb == 'all':
     nsx_nb = []
@@ -283,27 +246,29 @@ if nsx_nb == 'all':
 nsx_is_largest = False
 
 for i in nsx_nb:
-    if load_nev and os.path.getsize(".".join([filenames['nev'], 'nev'])) < os.path.getsize(
+    if args.nev and os.path.getsize(".".join([filenames['nev'], 'nev'])) < os.path.getsize(
             '.'.join([filenames['nsx'], 'ns%i' % i])):
         nsx_is_largest = True
+        break
 
 
-if not split:
+if length_bytes is not None and not args.same_size:
     if nsx_is_largest:
-        nb_samples, sampling_rate = get_nsx_samples(filenames, max(nsx_nb), extract_nsx_file_spec(filenames, max(nsx_nb)),length_bytes)
+        nb_samples, sampling_rate = get_nsx_samples(filenames, max(nsx_nb),
+                                                    extract_nsx_file_spec(filenames, max(nsx_nb)), length_bytes)
     else:
         nb_samples, sampling_rate = get_nev_samples(filenames, length_bytes)
 
 for i in nsx_nb:
     spec = extract_nsx_file_spec(filenames, i)
     if spec == '2.1':
-        cut_nsx_variant_a(filenames, i, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes, split=split)
+        cut_nsx_variant_a(filenames, i, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes,
+                          split=args.same_size)
     elif spec in ['2.2', '2.3']:
-        cut_nsx_variant_b(filenames, i, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes, split=split)
-if load_nev:
-    cut_nev(filenames, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes, split=split)
-
+        cut_nsx_variant_b(filenames, i, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes,
+                          split=args.same_size)
+if args.nev:
+    cut_nev(filenames, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes,
+            split=args.same_size)
 
 # TODO: same times from each file (???)
-
-
