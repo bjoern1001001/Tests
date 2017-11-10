@@ -218,12 +218,12 @@ else:
 
 filenames = {}
 if args.filenames is not None:
-    filenames['nsx'] = args.filenames
-    filenames['nev'] = args.filenames
+    filenames['nsx'] = os.path.abspath(args.filenames)
+    filenames['nev'] = os.path.abspath(args.filenames)
 if args.nsx_path is not None:
-    filenames['nsx'] = args.nsx_path
+    filenames['nsx'] = os.path.abspath(args.nsx_path)
 if args.nev_path is not None:
-    filenames['nev'] = args.nev_path
+    filenames['nev'] = os.path.abspath(args.nev_path)
 
 if not filenames:
     parser.error("No filenames specified, please use -f or --nsx_path and/or --nev_path")
@@ -231,11 +231,6 @@ elif nsx_nb and 'nsx' not in filenames:
     parser.error("You need to specify a path for the nsX you want to cut, please use -f or --nsx_path")
 elif load_nev and not ('nev' in filenames):
     parser.error("You need to specify a path for the nev you want to cut, please use -f or --nev_path")
-
-for key in filenames:
-    if not (filenames[key].startswith('/') or filenames[key].startswith('~')):
-        raise NotImplementedError
-print(filenames)
 
 if nsx_nb == 'all':
     nsx_nb = []
