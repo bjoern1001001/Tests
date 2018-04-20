@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Script for cutting files in the Blackrock raw format.
+This script can cut Blackrock files to a certain length
 
 This work is based on python-neo blackrockio and blackrockrawio by:
   * Chris Rodgers
@@ -8,10 +8,36 @@ This work is based on python-neo blackrockio and blackrockrawio by:
   * Lyuba Zehl
   * Samuel Garcia
 
+and was created by Björn Müller.
+
 This script can handle the following Blackrock file specifications:
   * 2.1
   * 2.2
   * 2.3
+
+It can be used from a terminal by executing "python /path/to/cut_blackrock_files.py {arguments}"
+There are two positional arguments that are used together, these are number of samples and sampling rate.
+The file is then cut to a number of samples that is given by its own sampling rate and the specified rate.
+So e.g. with 100 1000, a file with sampling rate 1000 gets cut to 100 samples, while a file with sampling rate 30000
+gets cut to 3000 samples, because then the time span covered by both files is equally long.
+They must be specified first if they should be used and are overridden by -b <int>.
+
+All possible options are:
+    -b <length in MiB>          : Specifies sizes of largest file
+    -a                          : Load all nsX files
+    -f </path/to/files>         : Path to input files
+    --nsx {number of nsX}       : Specify which nsX to load, multiple ints possible
+    --nev                       : Load nev file
+    --nsx_path </path/to/file>  : Override path for nsX files
+    --nev_path </path/to/file>  : Override path for nev file
+    --same_size                 : Create output files that all have the same size
+
+An example for usage is:
+python ./cut_blackrock_files.py 1000 30000 -f ./l101210-001 -a --nev_path ./l101210-001-02
+
+An example for cutting to specified length is:
+python ./cut_blackrock_files.py -b 10 --same_size -f ./l101210-001 -a
+
 """
 
 import argparse
@@ -20,7 +46,7 @@ import os
 import numpy as np
 
 
-def cut_nsx_variant_a(filenames, nsx_nb, nb_samples=None, sampling_rate=None, length_bytes=None, split=False):
+def cut_nsx_variant_a(filenames, nsx_nb, nb_samples=None, sampling_rate=None, length_bytes=None, same_size=False):
 
     """Loads the values needed to cut nsX files of version 2.1 and calls the function that cuts the files"""
 
@@ -39,7 +65,7 @@ def cut_nsx_variant_a(filenames, nsx_nb, nb_samples=None, sampling_rate=None, le
     file_sampling_rate = int(30000 / nsx_basic_header['period'])
 
     offset_header = offset_dt0 + np.dtype('uint32').itemsize * shape
-    if split and length_bytes is not None:
+    if same_size and length_bytes is not None:
         nb_samples = (length_bytes - offset_header) / (2 * shape)
         file_sampling_rate = 1
         sampling_rate = 1
@@ -48,7 +74,7 @@ def cut_nsx_variant_a(filenames, nsx_nb, nb_samples=None, sampling_rate=None, le
     cut_file(filename, offset_header + length)
 
 
-def cut_nsx_variant_b(filenames, nsx_nb, nb_samples=None, sampling_rate=None, length_bytes=None, split=False):
+def cut_nsx_variant_b(filenames, nsx_nb, nb_samples=None, sampling_rate=None, length_bytes=None, same_size=False):
 
     """Loads the values needed to cut nsX files of version 2.2 or 2.3 and calls the function that cuts the files"""
 
@@ -60,19 +86,20 @@ def cut_nsx_variant_b(filenames, nsx_nb, nb_samples=None, sampling_rate=None, le
 
     offset_header = bytes_in_headers + 9
     shape = channel_count
-    if split and length_bytes is not None:
+    if same_size and length_bytes is not None:
         nb_samples = (length_bytes - offset_header) / (2 * shape)
         file_sampling_rate = 1
         sampling_rate = 1
 
     nb_samples = int((nb_samples * file_sampling_rate) / sampling_rate)
+
     length = (nb_samples + 1) * shape * 2
 
     cut_file_nsx_variant_b(filename, offset_header + length, offset_header,
                            nb_samples, channel_count)
 
 
-def cut_nev(filenames, nb_samples=None, sampling_rate=None, length_bytes=None, split=False):
+def cut_nev(filenames, nb_samples=None, sampling_rate=None, length_bytes=None, same_size=False):
 
     """Loads the values needed to cut nev files and calls the function that cuts the files"""
 
@@ -84,7 +111,7 @@ def cut_nev(filenames, nb_samples=None, sampling_rate=None, length_bytes=None, s
     data_size = header[1]
     file_sampling_rate = header[2]
 
-    if length_bytes is not None and split:
+    if length_bytes is not None and same_size:
         nb_samples = int((length_bytes - offset_header) / data_size)
         i = nb_samples
     else:
@@ -128,12 +155,19 @@ def cut_file_nsx_variant_b(filename, total_length, offset_header, nb_samples, ch
 
     file_nb_samples = np.memmap(filename, shape=1, offset=offset_header - 4, dtype='uint32')[0]
 
-    if file_nb_samples <= nb_samples:
+    while file_nb_samples <= nb_samples:
         nb_samples -= file_nb_samples
         offset_header += 2 * channel_nb * file_nb_samples + 9  # 9 bytes is length of data packet header
+        total_length += 9
+        file_nb_samples = np.memmap(filename, shape=1, offset=offset_header-4, dtype='uint32')[0]
+
+    if total_length > os.path.getsize(filename):
+        raise ValueError('More samples specified than included in file')
 
     part_to_write = np.memmap(filename, shape=total_length, dtype='uint8')  # uint8 so size is always one byte
 
+    print(total_length)
+    print(filename)
     writer = np.memmap("".join([filename, "_cut"]), shape=total_length, dtype='uint8', mode='w+')
     writer[:] = part_to_write[:]
 
@@ -194,8 +228,13 @@ def get_nev_samples(filenames, length_bytes):
     data_size = np.memmap(filename, dtype='uint32', shape=1, offset=16)[0]
     offset_header = np.memmap(filename, dtype='uint32', shape=1, offset=12)[0]
     nb_samples = int((length_bytes - offset_header) / data_size)
+    print(length_bytes)
+    print("DS:", data_size)
+    print(nb_samples)
+    print(offset_header + nb_samples * data_size)
     time_stamp = np.memmap(filename, dtype='uint32', shape=1, offset=offset_header + nb_samples * data_size)[0]
-    return int(time_stamp / np.memmap(filename, dtype='uint32', shape=1, offset=20)[0]) * 1000, 1000
+    print(time_stamp)
+    return int(time_stamp*1000 / np.memmap(filename, dtype='uint32', shape=1, offset=20)[0]), 1000
 
 
 # Creating argparse parser with desired arguments
@@ -220,7 +259,7 @@ if not args.nev and not args.nsx and not args.all:
 
 if (args.nb_samples is None or args.sampling_rate is None) and args.bytes is None:
     parser.error("You need to specify the length of the output, either input the number of samples with the "
-                 "corresponding sampling rate or use -b <length in Megabytes>")
+                 "corresponding sampling rate or use -b <length in Mebibytes>")
 
 # Read the values into local variables
 nb_samples = args.nb_samples
@@ -284,21 +323,23 @@ if length_bytes is not None and not args.same_size:
     if nsx_is_largest:
         nb_samples, sampling_rate = get_nsx_samples(filenames, max(nsx_nb),
                                                     extract_nsx_file_spec(filenames, max(nsx_nb)), length_bytes)
+        print(nb_samples)
     else:
         nb_samples, sampling_rate = get_nev_samples(filenames, length_bytes)
+        print(nb_samples)
 
 # Load nsX with different routine depending on file version
 for i in nsx_nb:
     spec = extract_nsx_file_spec(filenames, i)
     if spec == '2.1':
         cut_nsx_variant_a(filenames, i, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes,
-                          split=args.same_size)
+                          same_size=args.same_size)
     elif spec in ['2.2', '2.3']:
         cut_nsx_variant_b(filenames, i, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes,
-                          split=args.same_size)
+                          same_size=args.same_size)
 # Load nev if wanted
 if load_nev:
     cut_nev(filenames, nb_samples=nb_samples, sampling_rate=sampling_rate, length_bytes=length_bytes,
-            split=args.same_size)
+            same_size=args.same_size)
 
 # TODO: same times from each file (???)
